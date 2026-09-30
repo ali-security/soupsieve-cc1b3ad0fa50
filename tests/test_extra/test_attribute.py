@@ -1,5 +1,6 @@
 """Test attribute selectors."""
 from .. import util
+import soupsieve as sv
 
 
 class TestAttribute(util.TestCase):
@@ -50,3 +51,41 @@ class TestAttribute(util.TestCase):
             ["div", "0", "1", "2", "3", "pre", "4", "6"],
             flags=util.HTML5
         )
+
+    def _assert_syntax_error_no_timeout(self, pattern):
+        """Assert that compiling the pattern fails for syntax error, not timeout error."""
+
+        import signal
+
+        def timeout_handler(signum, frame):
+            raise TimeoutError
+
+        # `SIGALRM` is not available on all platforms (e.g. Windows).
+        # There, just ensure the expected syntax error is raised.
+        has_alarm = hasattr(signal, 'SIGALRM')
+        if has_alarm:
+            previous_handler = signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(3)
+
+        passed = False
+        try:
+            with self.assertRaises(sv.SelectorSyntaxError):
+                sv.compile(pattern)
+            passed = True
+        except TimeoutError:
+            pass
+        finally:
+            if has_alarm:
+                signal.alarm(0)
+                signal.signal(signal.SIGALRM, previous_handler)
+        self.assertTrue(passed)
+
+    def test_bad_attribute_unclused(self):
+        """Test bad attribute fails for syntax error, not timeout error."""
+
+        self._assert_syntax_error_no_timeout('[a="' + ('x' * 300))
+
+    def test_bad_attribute_unclosed_single_quote(self):
+        """Test bad attribute with an unclosed single quote fails for syntax error, not timeout error."""
+
+        self._assert_syntax_error_no_timeout("[a='" + ('x' * 300))
