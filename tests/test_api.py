@@ -590,6 +590,94 @@ class TestInvalid(util.TestCase):
         with self.assertRaises(TypeError):
             sv.filter('div', "not a tag", flags=flags)
 
+    def test_excessive_selectors(self):
+        """Test excessive selectors."""
+
+        # Build a 20 KB selector string: "a,a,a,...,a" (10,000 items)
+        count = 10000
+        selector = ",".join("a" for _ in range(count))
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile(selector)
+
+    def test_excessive_custom_selectors(self):
+        """Test excessive custom selectors."""
+
+        # Build a 20 KB selector string: "a,a,a,...,a" (10,000 items)
+        count = 10000
+        selector = ",".join("a" for _ in range(count))
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile('div:--custom', custom={':--custom': selector})
+
+    def test_excessive_custom_and_normal_selectors(self):
+        """Test excessive custom and normal selectors."""
+
+        count = 5000
+        selector = ",".join("a" for _ in range(count))
+
+        # Compile the selector
+        with self.assertRaises(ValueError):
+            sv.compile(':is({}):--custom'.format(selector), custom={':--custom': selector})
+
+    def test_excessive_reused_custom_selectors(self):
+        """Test that reusing a cached custom selector still counts against the limit."""
+
+        count = 3000
+        selector = ",".join("a" for _ in range(count))
+
+        # Each use of the custom selector counts its full size, even after it is cached.
+        with self.assertRaises(ValueError):
+            sv.compile(':--custom, :--custom, :--custom', custom={':--custom': selector})
+
+    def test_excessive_builtin_pseudo_selectors(self):
+        """Test that built-in pseudo-classes that expand into selector lists count against the limit."""
+
+        # `:read-only` expands to a large precompiled selector list.
+        selector = ",".join(":read-only" for _ in range(1000))
+
+        with self.assertRaises(ValueError):
+            sv.compile(selector)
+
+    def test_excessive_selectors_select_api(self):
+        """Test excessive selectors through the select APIs."""
+
+        markup = '<div><a></a></div>'
+        soup = self.soup(markup, 'html.parser')
+        selector = ",".join("a" for _ in range(10000))
+
+        with self.assertRaises(ValueError):
+            sv.select(selector, soup)
+
+        with self.assertRaises(ValueError):
+            sv.select_one(selector, soup)
+
+        with self.assertRaises(ValueError):
+            sv.match(selector, soup.div)
+
+        with self.assertRaises(ValueError):
+            sv.filter(selector, soup.div)
+
+        with self.assertRaises(ValueError):
+            soup.select(selector)
+
+    def test_selectors_under_limit(self):
+        """Test that large selectors under the limit still compile and match."""
+
+        markup = '<div><a></a><b></b></div>'
+        soup = self.soup(markup, 'html.parser')
+
+        # 4000 simple selectors is well under the limit.
+        selector = ",".join("a" for _ in range(4000))
+        pattern = sv.compile(selector)
+        self.assertEqual(len(pattern.select(soup)), 1)
+
+        # A custom selector just under the limit also works.
+        pattern = sv.compile(':--custom', custom={':--custom': selector})
+        self.assertEqual(len(pattern.select(soup)), 1)
+
 
 class TestSyntaxErrorReporting(util.TestCase):
     """Test reporting of syntax errors."""
